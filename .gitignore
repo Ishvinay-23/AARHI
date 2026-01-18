@@ -1,0 +1,76 @@
+# ==================================================
+# AARHI Project .gitignore
+# Aadhaar Authentication Resilience & Hotspot Intelligence
+# ==================================================
+
+# --------------------------------------------------
+# Python artifacts
+# --------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# Environment variables (may contain secrets)
+.env
+*.env
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# --------------------------------------------------
+# Data directories (UIDAI datasets - DO NOT COMMIT)
+# --------------------------------------------------
+data/raw/
+data/processed/
+
+# --------------------------------------------------
+# Jupyter artifacts
+# --------------------------------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+
+# --------------------------------------------------
+# Streamlit artifacts
+# --------------------------------------------------
+.streamlit/
+
+# --------------------------------------------------
+# IDE and editor files
+# --------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --------------------------------------------------
+# OS-specific files
+# --------------------------------------------------
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --------------------------------------------------
+# Logs and temporary files
+# --------------------------------------------------
+*.log
+*.tmp
+*.temp
+
+# --------------------------------------------------
+# Output artifacts (regenerable)
+# --------------------------------------------------
+outputs/
