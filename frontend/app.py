@@ -82,6 +82,57 @@ COLOR_MAP = {
     "Green": "#2E7D32"     # Stable - Deep Green
 }
 
+# =============================================================================
+# INDIAN STATE CENTROIDS (Latitude, Longitude)
+# =============================================================================
+
+STATE_CENTROIDS = {
+    "Andhra Pradesh": (15.9129, 79.7400),
+    "Arunachal Pradesh": (28.2180, 94.7278),
+    "Assam": (26.2006, 92.9376),
+    "Bihar": (25.0961, 85.3131),
+    "Chhattisgarh": (21.2787, 81.8661),
+    "Goa": (15.2993, 74.1240),
+    "Gujarat": (22.2587, 71.1924),
+    "Haryana": (29.0588, 76.0856),
+    "Himachal Pradesh": (31.1048, 77.1734),
+    "Jharkhand": (23.6102, 85.2799),
+    "Karnataka": (15.3173, 75.7139),
+    "Kerala": (10.8505, 76.2711),
+    "Madhya Pradesh": (22.9734, 78.6569),
+    "Maharashtra": (19.7515, 75.7139),
+    "Manipur": (24.6637, 93.9063),
+    "Meghalaya": (25.4670, 91.3662),
+    "Mizoram": (23.1645, 92.9376),
+    "Nagaland": (26.1584, 94.5624),
+    "Odisha": (20.9517, 85.0985),
+    "Punjab": (31.1471, 75.3412),
+    "Rajasthan": (27.0238, 74.2179),
+    "Sikkim": (27.5330, 88.5122),
+    "Tamil Nadu": (11.1271, 78.6569),
+    "Telangana": (18.1124, 79.0193),
+    "Tripura": (23.9408, 91.9882),
+    "Uttar Pradesh": (26.8467, 80.9462),
+    "Uttarakhand": (30.0668, 79.0193),
+    "West Bengal": (22.9868, 87.8550),
+    "Andaman and Nicobar Islands": (11.7401, 92.6586),
+    "Chandigarh": (30.7333, 76.7794),
+    "Dadra and Nagar Haveli and Daman and Diu": (20.1809, 73.0169),
+    "Delhi": (28.7041, 77.1025),
+    "Jammu and Kashmir": (33.7782, 76.5762),
+    "Ladakh": (34.1526, 77.5771),
+    "Lakshadweep": (10.5667, 72.6417),
+    "Puducherry": (11.9416, 79.8083),
+    # Common variations and aliases
+    "Andaman & Nicobar Islands": (11.7401, 92.6586),
+    "Andaman And Nicobar Islands": (11.7401, 92.6586),
+    "Dadra & Nagar Haveli": (20.1809, 73.0169),
+    "Daman & Diu": (20.4283, 72.8397),
+    "Jammu & Kashmir": (33.7782, 76.5762),
+    "NCT of Delhi": (28.7041, 77.1025),
+    "Nct Of Delhi": (28.7041, 77.1025),
+}
+
 
 # =============================================================================
 # PAGE CONFIGURATION
@@ -203,6 +254,105 @@ def aggregate_state_level(df: pd.DataFrame) -> pd.DataFrame:
     state_agg["dominant_stress"] = state_agg.apply(get_dominant_label, axis=1)
     
     return state_agg
+
+
+def create_state_scatter_map(df: pd.DataFrame) -> go.Figure:
+    """
+    Create a Mapbox scatter map of India showing state-level resilience.
+    
+    Each marker represents one state, positioned at its centroid.
+    - Color indicates dominant stress level (Red/Yellow/Green)
+    - Size indicates average ARI score (larger = higher ARI = more stable)
+    
+    Args:
+        df: DataFrame with district-level hotspot data
+        
+    Returns:
+        Plotly Figure with Mapbox scatter map
+    """
+    # Aggregate to state level
+    state_data = aggregate_state_level(df)
+    
+    # Add latitude and longitude from centroids lookup
+    state_data["lat"] = state_data["state"].apply(
+        lambda s: STATE_CENTROIDS.get(s, (20.5937, 78.9629))[0]
+    )
+    state_data["lon"] = state_data["state"].apply(
+        lambda s: STATE_CENTROIDS.get(s, (20.5937, 78.9629))[1]
+    )
+    
+    # Create stress level labels for display
+    stress_labels = {
+        "Red": "High Stress",
+        "Yellow": "Moderate",
+        "Green": "Stable"
+    }
+    state_data["stress_label"] = state_data["dominant_stress"].map(stress_labels)
+    
+    # Marker size based on average ARI score (scaled for visibility)
+    # Higher ARI = larger marker (more stable areas are more prominent)
+    state_data["marker_size"] = state_data["avg_ari"].clip(lower=10)
+    
+    # Create scatter mapbox
+    fig = px.scatter_mapbox(
+        state_data,
+        lat="lat",
+        lon="lon",
+        color="dominant_stress",
+        color_discrete_map=COLOR_MAP,
+        size="marker_size",
+        size_max=35,
+        hover_name="state",
+        hover_data={
+            "lat": False,
+            "lon": False,
+            "marker_size": False,
+            "dominant_stress": False,
+            "stress_label": True,
+            "avg_ari": ":.1f",
+            "total_districts": True
+        },
+        labels={
+            "stress_label": "Status",
+            "avg_ari": "Avg ARI Score",
+            "total_districts": "Total Districts"
+        },
+        category_orders={"dominant_stress": ["Red", "Yellow", "Green"]}
+    )
+    
+    # Update layout for India-centered view (MANDATORY settings)
+    fig.update_layout(
+        mapbox=dict(
+            style="open-street-map",
+            center=dict(lat=22.5, lon=78.9),
+            zoom=3.7
+        ),
+        height=500,
+        margin=dict(l=0, r=0, t=10, b=0),
+        showlegend=True,
+        legend=dict(
+            title="Stress Level",
+            orientation="h",
+            yanchor="bottom",
+            y=1.01,
+            xanchor="right",
+            x=1,
+            bgcolor="rgba(255,255,255,0.8)"
+        )
+    )
+    
+    # Clean hover template showing key info
+    fig.update_traces(
+        hovertemplate=(
+            "<b>%{hovertext}</b><br>" +
+            "Status: %{customdata[0]}<br>" +
+            "Avg ARI: %{customdata[1]:.1f}<br>" +
+            "Districts: %{customdata[2]}" +
+            "<extra></extra>"
+        )
+    )
+    
+    return fig
 
 
 def create_state_choropleth(df: pd.DataFrame) -> go.Figure:
@@ -464,15 +614,9 @@ def create_summary_metrics(df: pd.DataFrame) -> dict:
 # =============================================================================
 
 def display_header():
-    """Display dashboard header."""
+    """Display dashboard header with title and subtitle."""
     st.title("🛡️ AARHI War-Room Dashboard")
-    st.markdown("""
-    **Aadhaar Authentication Resilience & Hotspot Intelligence**
-    
-    This dashboard provides a comprehensive view of district-level operational 
-    resilience indicators based on enrolment and update activity patterns.
-    """)
-    st.divider()
+    st.caption("Real-time monitoring of district-level Aadhaar operational resilience across India")
 
 
 def display_sidebar_filters(data: dict) -> str:
@@ -576,99 +720,97 @@ def display_summary_cards(metrics: dict):
 
 
 def display_map_section(df: pd.DataFrame):
-    """Display the state-level resilience map section."""
-    st.header("🗺️ State-Level Aadhaar Resilience Map")
-    st.caption("""
-    High-level geographic overview of operational resilience patterns across states. 
-    States are colored by dominant stress level based on district-level indicators.
-    Size reflects the number of districts in each state.
-    """)
-    
+    """Display the state-level resilience map section in a bordered card."""
     # Create tabs for different views
-    tab1, tab2 = st.tabs(["📊 Treemap View", "📈 Bar Chart View"])
+    tab1, tab2, tab3 = st.tabs(["🗺️ Map View", "📊 Treemap View", "📈 Bar Chart View"])
     
     with tab1:
+        fig_map = create_state_scatter_map(df)
+        st.plotly_chart(fig_map, use_container_width=True)
+    
+    with tab2:
         fig_treemap = create_state_choropleth(df)
         st.plotly_chart(fig_treemap, use_container_width=True)
     
-    with tab2:
+    with tab3:
         fig_bar = create_state_bar_map(df)
         st.plotly_chart(fig_bar, use_container_width=True)
     
-    # Show state-level summary
-    state_summary = aggregate_state_level(df)
-    red_states = len(state_summary[state_summary["dominant_stress"] == "Red"])
-    yellow_states = len(state_summary[state_summary["dominant_stress"] == "Yellow"])
-    green_states = len(state_summary[state_summary["dominant_stress"] == "Green"])
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("🔴 States with High Stress Districts", red_states)
-    with col2:
-        st.metric("🟡 States with Moderate Stress", yellow_states)
-    with col3:
-        st.metric("🟢 Stable States", green_states)
+    st.caption("**Color** = Stress Level (🔴 High | 🟡 Moderate | 🟢 Stable) | **Size** = Average ARI Score")
 
 
 def display_bar_chart_section(df: pd.DataFrame):
-    """Display the ARI comparison bar chart section."""
-    st.header("📊 ARI Score Comparison")
-    st.caption("""
-    Districts ranked by Aadhaar Resilience Index. Lower scores indicate 
-    higher observed operational stress intensity.
-    """)
-    
+    """Display the ARI comparison bar chart section in a bordered card."""
     # Slider for number of districts to show
     n_districts = st.slider(
-        "Number of districts to display",
+        "Districts to display",
         min_value=10,
         max_value=min(100, len(df)),
         value=min(30, len(df)),
-        step=5
+        step=5,
+        label_visibility="collapsed"
     )
     
     fig = create_ari_bar_chart(df, top_n=n_districts)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Lower ARI scores indicate higher operational stress intensity.")
 
 
 def display_trend_section(df: pd.DataFrame):
-    """Display the trend line chart section."""
-    st.header("📈 Operational Activity Trends")
-    st.caption("""
-    Time-series view of enrolment and update activity. This shows 
-    system-wide operational patterns over the observation period.
-    """)
-    
+    """Display the trend line chart section in a bordered card."""
     fig = create_trend_line_chart(df)
     st.plotly_chart(fig, use_container_width=True)
+    st.caption("Shows enrolment and update volumes over the observation period.")
 
 
 def render_stress_badge(level: str) -> str:
     """
-    Render a stress level as a high-contrast HTML badge.
+    Render a stress level as a professional pill-style HTML badge.
     
     Args:
         level: Stress level string ("Red", "Yellow", or "Green")
         
     Returns:
-        HTML string for styled badge
+        HTML string for styled badge pill
     """
+    # Common base styles for all badges
+    base_style = (
+        "display:inline-block;"
+        "padding:4px 10px;"
+        "border-radius:999px;"
+        "font-weight:600;"
+        "font-size:12px;"
+    )
+    
+    # Badge-specific styles (background, text color, border)
     badges = {
-        "Red": "<span style='background:#D32F2F;color:white;padding:4px 10px;border-radius:12px;font-weight:600;'>🔴HIGH</span>",
-        "Yellow": "<span style='background:#F9A825;color:black;padding:4px 10px;border-radius:12px;font-weight:600;'>🟡MODERATE</span>",
-        "Green": "<span style='background:#2E7D32;color:white;padding:4px 10px;border-radius:12px;font-weight:600;'>🟢STABLE</span>",
+        "Red": (
+            f"<span style='{base_style}"
+            "background:#FDECEA;"
+            "color:#B71C1C;"
+            "border:1px solid #F5C6CB;'>"
+            "HIGH</span>"
+        ),
+        "Yellow": (
+            f"<span style='{base_style}"
+            "background:#FFF4E5;"
+            "color:#8A6D1D;"
+            "border:1px solid #FFE0A3;'>"
+            "MODERATE</span>"
+        ),
+        "Green": (
+            f"<span style='{base_style}"
+            "background:#E8F5E9;"
+            "color:#1B5E20;"
+            "border:1px solid #C8E6C9;'>"
+            "STABLE</span>"
+        ),
     }
     return badges.get(level, level)
 
 
 def display_recommendations_section(df: pd.DataFrame):
-    """Display the recommendations table section."""
-    st.header("📋 Action Recommendations")
-    st.caption("""
-    Rule-based recommendations for each district based on observed 
-    resilience patterns. Sorted by priority (high stress first).
-    """)
-    
+    """Display the recommendations table section in a bordered card."""
     # Sort by hotspot priority
     priority_map = {"Red": 0, "Yellow": 1, "Green": 2}
     df_sorted = df.copy()
@@ -723,9 +865,10 @@ def display_recommendations_section(df: pd.DataFrame):
     # Create scrollable container
     st.markdown(table_css, unsafe_allow_html=True)
     st.markdown(
-        f'<div style="max-height: 400px; overflow-y: auto;">{table_html}</div>',
+        f'<div style="max-height: 350px; overflow-y: auto;">{table_html}</div>',
         unsafe_allow_html=True
     )
+    st.caption("Sorted by priority: High Stress districts first.")
     
     # Download button (use original data without HTML)
     csv = df_sorted.to_csv(index=False)
@@ -747,9 +890,6 @@ def main():
         # Load all data
         data = load_all_data()
         
-        # Display header
-        display_header()
-        
         # Display sidebar and get filter selection
         selected_state = display_sidebar_filters(data)
         
@@ -759,47 +899,64 @@ def main():
         filtered_recommendations = filter_by_state(data["recommendations"], selected_state)
         filtered_metrics = filter_by_state(data["metrics"], selected_state)
         
-        # Display current filter status
+        # =====================================================================
+        # ROW 1: Header + KPI Summary
+        # =====================================================================
+        display_header()
+        
+        # Display current filter status inline
         if selected_state != "All States":
             st.info(f"📍 Showing data for: **{selected_state}**")
         
-        # Summary metrics
+        # Summary metrics (KPI cards)
         summary = create_summary_metrics(filtered_hotspots)
         display_summary_cards(summary)
         
         st.divider()
         
-        # Map and Bar Chart side by side
-        col1, col2 = st.columns(2)
-        
-        with col1:
+        # =====================================================================
+        # ROW 2: Geographic Overview (Hero Section)
+        # =====================================================================
+        with st.container(border=True):
+            st.subheader("🗺️ Geographic Overview")
             display_map_section(filtered_hotspots)
         
-        with col2:
-            display_bar_chart_section(filtered_hotspots)
-
+        st.divider()
+        
+        # =====================================================================
+        # ROW 3: Analytics (Side-by-Side)
+        # =====================================================================
+        col_left, col_right = st.columns(2)
+        
+        with col_left:
+            with st.container(border=True):
+                st.subheader("📊 District Comparison")
+                display_bar_chart_section(filtered_hotspots)
+        
+        with col_right:
+            with st.container(border=True):
+                st.subheader("📈 System Trends")
+                display_trend_section(filtered_metrics)
         
         st.divider()
         
-        # Trend chart
-        display_trend_section(filtered_metrics)
-        
-        st.divider()
-        
-        # Recommendations table
-        display_recommendations_section(filtered_recommendations)
+        # =====================================================================
+        # ROW 4: Actionable Insights
+        # =====================================================================
+        with st.container(border=True):
+            st.subheader("📋 Action Recommendations")
+            display_recommendations_section(filtered_recommendations)
         
         # Footer
         st.divider()
-        st.markdown("""
-        ---
-        **AARHI Dashboard** | Built for UIDAI Hackathon 2026 | 
-        Data represents observed operational patterns, not causal assessments.
-        """)
+        st.caption(
+            "**AARHI Dashboard** | Built for UIDAI Hackathon 2026 | "
+            "Data represents observed operational patterns, not causal assessments."
+        )
         
     except FileNotFoundError as e:
         st.error(f"""
-        ⚠️ **Data files not found!**
+        **Data files not found!**
         
         Please ensure the data pipeline has been run first:
         1. Run `python engine/data_prep.py`
