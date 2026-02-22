@@ -13,6 +13,122 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
+import subprocess
+import sys
+
+
+# =============================================================================
+# PROJECT ROOT & DATA PIPELINE
+# =============================================================================
+
+def get_project_root() -> Path:
+    """Dynamically detect the project root directory."""
+    # Start from the current file's directory and go up to find the project root
+    current_file = Path(__file__).resolve()
+    # frontend/app.py -> go up one level to reach project root
+    return current_file.parent.parent
+
+
+def get_required_data_files() -> list:
+    """Return list of required processed data files."""
+    return [
+        "hotspot_clusters.csv",
+        "recommendations.csv",
+        "ari_scored_districts.csv",
+        "district_merged_metrics.csv"
+    ]
+
+
+def check_data_files_exist(project_root: Path) -> tuple:
+    """
+    Check if all required processed data files exist.
+    
+    Returns:
+        tuple: (all_exist: bool, missing_files: list)
+    """
+    processed_dir = project_root / "data" / "processed"
+    required_files = get_required_data_files()
+    missing_files = []
+    
+    for filename in required_files:
+        filepath = processed_dir / filename
+        if not filepath.exists():
+            missing_files.append(filename)
+    
+    return len(missing_files) == 0, missing_files
+
+
+def run_data_pipeline(project_root: Path) -> tuple:
+    """
+    Run the data pipeline scripts in order.
+    
+    Returns:
+        tuple: (success: bool, error_message: str or None)
+    """
+    pipeline_scripts = [
+        project_root / "engine" / "data_prep.py",
+        project_root / "engine" / "ari.py",
+        project_root / "engine" / "clustering.py",
+        project_root / "engine" / "recommendations.py"
+    ]
+    
+    for script in pipeline_scripts:
+        if not script.exists():
+            return False, f"Pipeline script not found: {script.name}"
+        
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script)],
+                cwd=str(project_root),
+                capture_output=True,
+                text=True,
+                check=True
+            )
+        except subprocess.CalledProcessError as e:
+            error_msg = f"Script {script.name} failed:\n{e.stderr or e.stdout}"
+            return False, error_msg
+        except Exception as e:
+            return False, f"Error running {script.name}: {str(e)}"
+    
+    return True, None
+
+
+def initialize_data_pipeline():
+    """
+    Check for required data files and run pipeline if needed.
+    This runs only once per session using session state.
+    """
+    # Skip if already initialized this session
+    if st.session_state.get("_pipeline_initialized", False):
+        return
+    
+    project_root = get_project_root()
+    files_exist, missing_files = check_data_files_exist(project_root)
+    
+    if files_exist:
+        st.session_state["_pipeline_initialized"] = True
+        return
+    
+    # Show pipeline execution UI
+    st.info(f"🔍 Missing data files detected: {', '.join(missing_files)}")
+    
+    with st.status("Running data pipeline...", expanded=True) as status:
+        st.write("📦 Preparing data...")
+        st.write("Running: engine/data_prep.py")
+        st.write("Running: engine/ari.py")
+        st.write("Running: engine/clustering.py")
+        st.write("Running: engine/recommendations.py")
+        
+        success, error_msg = run_data_pipeline(project_root)
+        
+        if success:
+            status.update(label="Data pipeline completed successfully.", state="complete", expanded=False)
+            st.session_state["_pipeline_initialized"] = True
+            st.rerun()
+        else:
+            status.update(label="Data pipeline failed.", state="error", expanded=True)
+            st.error(f"❌ Pipeline Error:\n{error_msg}")
+            st.stop()
 
 
 # =============================================================================
@@ -972,4 +1088,5 @@ def main():
 
 
 if __name__ == "__main__":
+    initialize_data_pipeline()
     main()
